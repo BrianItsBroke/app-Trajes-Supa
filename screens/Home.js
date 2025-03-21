@@ -1,42 +1,32 @@
-import React, {useEffect}from 'react';
-import { View, ImageBackground, Button, StyleSheet, Image, BackHandler } from 'react-native';
+import React from 'react';
+import { View, ImageBackground, Button, StyleSheet, Image } from 'react-native';
+import useHomeViewModel from '../viewmodels/HomeViewModel';
 
-const Home = ({ navigation }) => {
-
-  useEffect(() => {
-    // Quitar la flecha de retroceso
-    navigation.setOptions({
-      headerLeft: () => null, 
-    });
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => true);
-
-    // Limpiar el event listener al desmontar el componente
-    return () => backHandler.remove(); 
-
-  }, [navigation]);
+const Home = () => {
+  const { navigateToRegister, navigateToLogin } = useHomeViewModel();
 
   return (
     <ImageBackground
       source={require('../assets/Login_image.png')} 
       style={styles.backgroundImage}
     >
-     <View style={styles.containerLogo}>
-     <Image
+      <View style={styles.containerLogo}>
+        <Image
           source={require('../assets/Logo_imagen.jpg')} 
           style={styles.logo} 
         />
-     </View>
+      </View>
       <View style={styles.container}>
         <Button 
           title="Registrarse" 
           color={'#8B4513'}
-          onPress={() => navigation.navigate('Register')} 
+          onPress={navigateToRegister} 
           style={styles.button}
         />
         <Button 
           title="Iniciar Sesión" 
           color={'#8B4513'}
-          onPress={() => navigation.navigate('Login')} 
+          onPress={navigateToLogin} 
           style={styles.button}
         />
       </View>
@@ -58,7 +48,7 @@ const styles = StyleSheet.create({
   logo:{
     width: 200,
     height: 200,
-    borderRadius:250/2,
+    borderRadius: 100,
     marginBottom: 20,
   },
   container: {
@@ -66,10 +56,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
-    gap:15
+    gap: 15
   },
   button: {
-    margin:5
+    margin: 5
   },
 });
 

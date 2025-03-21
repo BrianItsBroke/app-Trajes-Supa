@@ -1,20 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, TextInput, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import useSearchIconViewModel from '../viewmodels/SearchIconViewModel';
 
-const SearchIcon = ({ onSearch, isSearchVisible, setIsSearchVisible, searchText, setSearchText }) => {
-  const handleSearchPress = () => {
-    setIsSearchVisible(!isSearchVisible);
-  };
-
-  const handleSearchChange = (text) => {
-    setSearchText(text);
-    onSearch(text);
-  };
-
-  const clearSearchText = () => {
-    setSearchText('');
-    onSearch('');
-  };
+const SearchIcon = ({ onSearch }) => {
+  const {
+    isSearchVisible,
+    searchText,
+    handleSearchPress,
+    handleSearchChange,
+    clearSearchText,
+  } = useSearchIconViewModel(onSearch);
 
   return (
     <View>
@@ -42,11 +37,10 @@ const SearchIcon = ({ onSearch, isSearchVisible, setIsSearchVisible, searchText,
 };
 
 const styles = StyleSheet.create({
-  // ... tus estilos existentes ...
   icon: {
     width: 30,
     height: 30,
-    marginRight:15
+    marginRight: 15,
   },
   searchBar: {
     backgroundColor: '#f2f2f2',
@@ -54,10 +48,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
     position: 'absolute',
-    top: 35, // Ajusta la posición según tu header
+    top: 35,
     left: -350,
     right: -2,
-    zIndex: 1, // Asegúrate de que esté por encima del contenido
+    zIndex: 1,
   },
   searchContainer: {
     flexDirection: 'row',

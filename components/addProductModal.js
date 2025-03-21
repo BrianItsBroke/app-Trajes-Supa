@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Button, Modal, StyleSheet, TextInput, View, Text } from 'react-native';
+import useAddProductViewModel from '../viewmodels/AddProductViewModel';
 
 const AddProductModal = ({ isVisible, onClose, onAddProduct, fetchProducts, setProducts }) => {
-  const [nombre, setNombre] = useState('');
-  const [precio, setPrecio] = useState('');
-  const [imagen, setImagen] = useState('');
-
-  const handleSubmit =  () => {
-    onAddProduct({ nombre, precio, imagen }); 
-    fetchProducts(setProducts);
-    setNombre('');
-    setPrecio('');
-    setImagen('');
-  };
+  const {
+    nombre,
+    setNombre,
+    precio,
+    setPrecio,
+    imagen,
+    setImagen,
+    handleSubmit,
+  } = useAddProductViewModel(onAddProduct, fetchProducts, setProducts);
 
   return (
     <Modal visible={isVisible} animationType="slide">
@@ -38,8 +37,8 @@ const AddProductModal = ({ isVisible, onClose, onAddProduct, fetchProducts, setP
           style={styles.input}
         />
         <View style={styles.buttonsContainer}>
-        <Button color={'green'} title="Agregar" onPress={handleSubmit} />
-        <Button color={'red'} title="Cancelar" onPress={onClose} />
+          <Button color={'green'} title="Agregar" onPress={handleSubmit} />
+          <Button color={'red'} title="Cancelar" onPress={onClose} />
         </View>
       </View>
     </Modal>
@@ -56,22 +55,22 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius:5,
+    borderRadius: 5,
     padding: 10,
     marginBottom: 10,
     width: '80%',
   },
-  title:{
-    justifyContent:'center',
-    fontSize:25,
-    fontWeight:'bold',
-    marginBottom:20
+  title: {
+    justifyContent: 'center',
+    fontSize: 25,
+    fontWeight: 'bold',
+    marginBottom: 20,
   },
   buttonsContainer: {
-    flexDirection: 'row', 
-    justifyContent: 'space-around', 
-    width: '60%', 
-    marginTop: 20, 
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '60%',
+    marginTop: 20,
   },
 });
 

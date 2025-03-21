@@ -1,61 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Image, ImageBackground } from 'react-native';
-import { supabase } from '../lib/supabase';
+import React from 'react';
+import { StyleSheet, View, Text, Image, ImageBackground, ActivityIndicator } from 'react-native';
+import usePerfilViewModel from '../viewmodels/ProfileViewModel';
 
 const Perfil = () => {
-  const [userData, setUserData] = useState(null);
+  const { userData, loading } = usePerfilViewModel();
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser(); // Obtener el usuario actual
-
-        if (user) {
-          const { data, error } = await supabase
-            .from('usuarios') // Reemplaza 'usuarios' con el nombre de tu tabla
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-          if (error) {
-            console.error('Error al obtener los datos del usuario:', error);
-          } else {
-            setUserData(data);
-          }
-        }
-      } catch (error) {
-        console.error('Error al obtener los datos del usuario:', error);
-      }
-    };
-
-    fetchUserData();
-  }, []);
+  if (loading) {
+    return <ActivityIndicator size="large" color="#007AFF" style={styles.loading} />;
+  }
 
   if (!userData) {
-    return <Text>Cargando...</Text>;
+    return <Text style={styles.errorText}>No se encontraron datos del usuario</Text>;
   }
 
   return (
-    <ImageBackground
-        source={require('../assets/FondoPerfil.jpg')} 
-        style={styles.backgroundImage}
-    >
-    <View style={styles.container}>
-      <View style={styles.header}> 
-        <Image 
-          source={require('../assets/perfil.jpg')} // Reemplaza con la imagen que desees
-          style={styles.profileImage} 
-        />
-        <Text style={styles.nombreUsuario}>{userData.nombre}</Text>
-        <Text style={styles.correoUsuario}>{userData.email}</Text>
-      </View>
+    <ImageBackground source={require('../assets/FondoPerfil.jpg')} style={styles.backgroundImage}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Image source={require('../assets/perfil.jpg')} style={styles.profileImage} />
+          <Text style={styles.nombreUsuario}>{userData.nombre}</Text>
+          <Text style={styles.correoUsuario}>{userData.email}</Text>
+        </View>
 
-      <View style={styles.infoContainer}>
-        <Text style={styles.label}>ID:</Text>
-        <Text style={styles.valor}>{userData.id}</Text>
-
+        <View style={styles.infoContainer}>
+          <Text style={styles.label}>ID:</Text>
+          <Text style={styles.valor}>{userData.id}</Text>
+        </View>
       </View>
-    </View>
     </ImageBackground>
   );
 };
@@ -92,7 +63,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 5, // Para Android
+    elevation: 5,
   },
   label: {
     fontSize: 18,
@@ -105,8 +76,18 @@ const styles = StyleSheet.create({
   },
   backgroundImage: {
     flex: 1,
-    resizeMode: 'cover', 
-    justifyContent: 'center', 
+    resizeMode: 'cover',
+    justifyContent: 'center',
+  },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    textAlign: 'center',
+    fontSize: 18,
+    color: 'red',
   },
 });
 
