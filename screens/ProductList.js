@@ -10,6 +10,8 @@ import { useNavigation } from '@react-navigation/native';
 import { Linking } from 'react-native';
 import Swiper from 'react-native-swiper';
 
+import Cart from '../components/Cart';
+
 function ProductList() {
   const [products, setProducts] = useState([]);
   const [isEditingModalVisible, setIsEditingModalVisible] = useState(false);
@@ -163,6 +165,65 @@ useEffect(() => {
     }
   };
   
+  const handleAddToCart = async (productId) => {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session) {
+        Alert.alert("Inicia sesión", "Debes iniciar sesión para agregar productos al carrito.");
+        return;
+    }
+
+    const userId = sessionData.session.user.id;
+
+    try {
+        const { data: existingItem, error: fetchError } = await supabase
+            .from('Carrito')
+            .select('id, quantity')
+            .eq('user_id', userId)
+            .eq('product_id', productId)
+            .maybeSingle();
+
+         if (fetchError) {
+            console.error("Error checking cart:", fetchError);
+            Alert.alert("Error", "No se pudo verificar el carrito: " + fetchError.message);
+            return;
+         }
+
+        if (existingItem) {
+            const newQuantity = existingItem.quantity + 1;
+            const { error: updateError } = await supabase
+                .from('Carrito')
+                .update({ quantity: newQuantity })
+                .eq('id', existingItem.id);
+
+            if (updateError) {
+                 console.error("Error updating quantity:", updateError);
+                Alert.alert("Error", "No se pudo actualizar la cantidad en el carrito: " + updateError.message);
+            } else {
+                 
+            }
+        } else {
+            const { error: insertError } = await supabase
+                .from('Carrito')
+                .insert({ user_id: userId, product_id: productId, quantity: 1 });
+
+            if (insertError) {
+                 console.error("Error adding to cart:", insertError);
+                 if (insertError.code === '23505') {
+                     Alert.alert("Error", "Este producto ya está en tu carrito.");
+                 } else {
+                     Alert.alert("Error", "No se pudo agregar el producto al carrito: " + insertError.message);
+                 }
+            } else {
+                 
+            }
+        }
+    } catch (error) {
+         console.error("Exception adding to cart:", error);
+         Alert.alert("Error", "Ocurrió un problema al agregar al carrito.");
+    }
+};
+
 
   const renderItem = ({ item }) => (
     <View style={styles.productItem}>
@@ -174,6 +235,13 @@ useEffect(() => {
       <Text style={styles.productName}>{item.nombre}</Text>
       <Text style={styles.productPrice}>${item.precio}</Text>
       </View>
+      <TouchableOpacity
+          style={styles.addToCartButton}
+          onPress={() => handleAddToCart(item.id)}
+        >
+          <Text style={styles.addToCartButtonText}>Agregar al carrito</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={() => Linking.openURL('https://www.bbva.mx/')} style={styles.buyButton}> 
         <Text style={styles.buyButtonText}>Comprar</Text> 
       </TouchableOpacity>
@@ -214,6 +282,9 @@ useEffect(() => {
           setSearchText={setSearchText}
         />
 
+        <View style={{ marginLeft: 15 }}> {/* Ajusta este margen según necesites */}
+          <Cart />
+        </View>
         
         </View>
         </View>
@@ -324,6 +395,18 @@ const styles = StyleSheet.create({
      borderRadius: 5,
      marginTop: 20,
      alignItems: 'center',
+    },
+    addToCartButton:{
+     backgroundColor: '#8B4513',
+     padding: 15,
+     borderRadius: 5,
+     marginTop: 20,
+     alignItems: 'center',
+    },
+    addToCartButtonText:{
+      color: '#fff',
+     fontSize: 16,
+     fontWeight: 'bold',
     },
     buyButtonText: {
      color: '#fff',

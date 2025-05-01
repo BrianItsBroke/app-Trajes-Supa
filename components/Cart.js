@@ -1,307 +1,395 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  Modal,
+  SafeAreaView,
+  StatusBar,
+} from 'react-native';
+import { supabase } from '../lib/supabase'; // Asegúrate que la ruta sea correcta
 
-
-const CartItem = ({ item, onRemove, onIncreaseQuantity, onDecreaseQuantity }) => (
-  <View style={styles.cartItem}>
-    <Image source={{uri: item.imagen}} style={styles.cartItemImage} />
-    <View style={styles.productInfo}>
-      <Text style={styles.cartItemNombre}>{item.nombre}</Text>
-      <Text style={styles.cartItemPrecio}>${item.precio}</Text>
-      <View style={styles.quantityContainer}>
-        <TouchableOpacity onPress={onDecreaseQuantity} style={styles.quantityButton}>
-          <Text style={styles.quantityButtonText}>-</Text>
-        </TouchableOpacity>
-        <Text style={styles.quantityText}>{item.quantity}</Text>
-        <TouchableOpacity onPress={onIncreaseQuantity} style={styles.quantityButton}>
-          <Text style={styles.quantityButtonText}>+</Text>
-        </TouchableOpacity>
+// --- Componente Hijo: CartItem ---
+// Muestra cada producto dentro del carrito
+const CartItem = ({ item, onRemove, onIncreaseQuantity, onDecreaseQuantity, isLoading }) => ( // isLoading opcional para deshabilitar botones
+    <View style={styles.cartItem}>
+      <Image
+        source={{ uri: item.Productos?.imagen || 'URL_IMAGEN_POR_DEFECTO_SI_FALLA' }}
+        style={styles.cartItemImage}
+        onError={(e) => console.log("Error cargando imagen:", e.nativeEvent.error)}
+      />
+      <View style={styles.productInfo}>
+        {/* Nombre del producto */}
+        <Text style={styles.cartItemNombre} numberOfLines={2}>{item.Productos?.nombre || 'Nombre no disponible'}</Text>
+        {/* Precio del producto */}
+        <Text style={styles.cartItemPrecio}>${item.Productos?.precio?.toFixed(2) || '0.00'}</Text>
+        {/* Acciones: Cantidad y Eliminar */}
+        <View style={styles.quantityActions}>
+            {/* Contenedor de Cantidad (+ / -) */}
+            <View style={styles.quantityContainer}>
+              <TouchableOpacity onPress={onDecreaseQuantity} style={styles.quantityButton} disabled={isLoading}>
+                <Text style={styles.quantityButtonText}>-</Text>
+              </TouchableOpacity>
+              <Text style={styles.quantityText}>{item.quantity}</Text>
+              <TouchableOpacity onPress={onIncreaseQuantity} style={styles.quantityButton} disabled={isLoading}>
+                <Text style={styles.quantityButtonText}>+</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Botón Eliminar */}
+            <TouchableOpacity onPress={onRemove} style={styles.removeButton} disabled={isLoading}>
+              <Text style={styles.removeButtonText}>Eliminar</Text>
+            </TouchableOpacity>
+        </View>
       </View>
-      <TouchableOpacity onPress={onRemove} style={styles.removeButton}>
-        <Text style={styles.removeButtonText}>Eliminar</Text>
-      </TouchableOpacity>
     </View>
-  </View>
-);
+  );
 
-const Cart = ({ cartItems, setCartItems }) => {
-  const [subtotal, setSubtotal] = useState(0);
-  const [isCartVisible, setIsCartVisible] = useState(false);
+// --- Componente Principal: Cart ---
+// Gestiona el estado del carrito, la visibilidad y las interacciones
+const Cart = () => {
+  // --- Estados del Componente ---
+  const [cartItems, setCartItems] = useState([]); // Array de items en el carrito
+  const [subtotal, setSubtotal] = useState(0);   // Subtotal calculado
+  const [isCartVisible, setIsCartVisible] = useState(false); // Visibilidad del modal del carrito
+  const [isLoading, setIsLoading] = useState(false);      // Indicador de carga general o de operaciones
+  const [userId, setUserId] = useState(null);             // ID del usuario autenticado
 
-  useEffect(() => {
-    const fetchCart = async () => {
-      try {
-        
-        const { data: user, error: userError } = await supabase.auth.getSession();
-            if (userError|| !user) {
-              console.error('Error de autenticación:', userError);
-              Alert.alert('Error', 'No se pudo obtener la sesión del usuario.'); 
-              return;       
+  // --- Efecto para obtener Sesión y User ID ---
+   useEffect(() => {
+        const getSessionData = async () => {
+             const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError) { console.error('Error getting session:', sessionError); return; }
+            setUserId(sessionData?.session?.user?.id ?? null);
+        };
+        getSessionData();
+        // Escucha cambios en el estado de autenticación
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+            const currentUserId = session?.user?.id ?? null;
+            setUserId(currentUserId);
+            // Si el usuario cierra sesión, limpia el carrito y cierra el modal
+            if (!currentUserId) {
+                setCartItems([]);
+                setIsCartVisible(false);
             }
-        const userId = user.id;
-        console.log(user.id)
-        const { data, error } = await supabase
-          .from('Carrito')
-          .select('*, Productos (*)') // Obtener la información del producto con un join
-          .eq('user_id', "ae6e8029-01eb-4f9c-ac2d-91c78fa45c0f");
-          console.log(data)
-        if (error) {
-          console.error('Error al obtener el carrito:', error);
-          // Manejar el error (mostrar un mensaje al usuario, por ejemplo)
-        } else {
-          
-          setCartItems(data);
-        }
-      } catch (error) {
-        console.error('Error al obtener el carrito:', error);
-        // Manejar el error
-      }
-    };
-  
-    fetchCart();
-  }, []);
+        });
+        // Limpia el listener al desmontar
+        return () => { authListener?.subscription.unsubscribe(); };
+    }, []);
 
-  const removeFromCart = async (productId) => {
+  // --- Función para Cargar el Carrito desde Supabase ---
+  // useCallback para optimizar y usar como dependencia en otros efectos
+  const fetchCart = useCallback(async (showLoadingIndicator = true) => {
+    // Si no hay usuario, limpia el carrito y termina
+    if (!userId) { setCartItems([]); return; }
+
+    // Muestra indicador de carga si se solicita
+    if (showLoadingIndicator) setIsLoading(true);
     try {
-      const userId = await AsyncStorage.getItem('userId');
+      // Consulta a Supabase para obtener items del carrito y datos del producto relacionado
+      const { data, error } = await supabase
+          .from('Carrito')
+          .select('*, Productos (*)') // Join con la tabla Productos
+          .eq('user_id', userId)      // Filtra por el usuario actual
+          .order('create_at', { ascending: true }); // Ordena por fecha (verifica nombre 'create_at')
+
+      if (error) {
+        console.error('Error al obtener el carrito (fetchCart):', error);
+        setCartItems([]); // Limpia en caso de error
+      } else {
+        setCartItems(data || []); // Actualiza el estado con los datos obtenidos
+      }
+    } catch (error) {
+      console.error('Excepción al obtener el carrito:', error);
+      setCartItems([]); // Limpia en caso de excepción
+    } finally {
+      // Oculta indicador de carga si se mostró
+      if (showLoadingIndicator) setIsLoading(false);
+    }
+  }, [userId]); // Esta función depende del userId
+
+  // --- Efecto para Carga Inicial del Carrito ---
+  // Se ejecuta cuando el componente se monta o cuando fetchCart (o userId) cambian
+  useEffect(() => {
+    fetchCart();
+  }, [fetchCart]);
+
+ // --- Efecto para Suscripción Realtime ---
+ // Escucha cambios en la tabla Carrito para mantener la UI sincronizada
+ useEffect(() => {
+    // No configura la suscripción si no hay usuario
+    if (!userId) { return; }
+
+    // Crea un canal específico para la tabla Carrito filtrado por usuario
+    const channel = supabase
+        .channel(`public:Carrito:user_id=eq.${userId}`)
+        .on(
+            'postgres_changes',
+            {
+                event: '*', // Escucha cualquier evento (INSERT, UPDATE, DELETE)
+                schema: 'public',
+                table: 'Carrito',
+                filter: `user_id=eq.${userId}` // Filtro crucial para escuchar solo cambios propios
+            },
+            (payload) => {
+                // Cuando llega un cambio, vuelve a cargar el carrito
+                // El 'false' evita mostrar el indicador de carga grande para actualizaciones pequeñas
+                fetchCart(false);
+            }
+        )
+        .subscribe((status, err) => { // Maneja el estado de la conexión del canal
+             if (status === 'CHANNEL_ERROR' || err) { console.error('[Realtime] Channel Error:', err); }
+             // Puedes añadir logs para otros estados si es necesario (SUBSCRIBED, TIMED_OUT, etc.)
+         });
+
+    // Función de limpieza: se ejecuta al desmontar o cambiar userId
+    return () => {
+        if (channel) {
+            supabase.removeChannel(channel); // Elimina el canal para liberar recursos
+        }
+    };
+ }, [userId, fetchCart]); // Depende de userId y fetchCart
+
+  // --- Efecto para Calcular el Subtotal ---
+  // Se ejecuta cada vez que cambia el array cartItems
+  useEffect(() => {
+    let total = 0;
+    cartItems.forEach(item => {
+      // Suma el precio * cantidad de cada item válido
+      if (item.Productos && typeof item.Productos.precio === 'number' && typeof item.quantity === 'number') {
+        total += item.Productos.precio * item.quantity;
+      }
+    });
+    setSubtotal(total); // Actualiza el estado del subtotal
+  }, [cartItems]);
+
+
+  // --- Funciones de Modificación con OPTIMISTIC UI ---
+
+  // Eliminar un producto del carrito
+  const removeFromCart = async (productId) => {
+    if (!userId) return; // Requiere usuario logueado
+
+    // 1. Guarda el estado actual para posible reversión
+    const originalCartItems = [...cartItems];
+    // Encuentra el item a eliminar (necesitamos su ID de fila)
+    const itemToRemove = originalCartItems.find(item => item.product_id === productId);
+    if (!itemToRemove) {
+        console.warn(`[removeFromCart] Intento de eliminar item no encontrado localmente: ${productId}`);
+        return; // Evita errores si el item ya no está por alguna razón
+    }
+
+    // 2. Actualización Optimista: Modifica el estado local *antes* de llamar a Supabase
+    setCartItems(prevItems => prevItems.filter(item => item.product_id !== productId));
+
+    // 3. Llama a Supabase en segundo plano para eliminar en la BD
+    try {
+      setIsLoading(true); // Indicador sutil de operación en curso (opcional)
       const { error } = await supabase
         .from('Carrito')
         .delete()
-        .eq('user_id', userId)
-        .eq('product_id', productId);
-  
+        .eq('id', itemToRemove.id) // Identifica la fila por su ID primario
+        .eq('user_id', userId);    // Doble verificación por seguridad (RLS ya lo hace)
+
+      // 4. Maneja la respuesta de Supabase
       if (error) {
-        console.error('Error al eliminar del carrito:', error);
-        // Manejar el error
-      } else {
-        // Puedes actualizar el estado local 'cartItems' o volver a cargar el carrito desde la base de datos
-        // Aquí, simplemente filtramos el item eliminado del estado local:
-        setCartItems(cartItems.filter(item => item.product_id !== productId));
+        console.error('[removeFromCart] Error de Supabase:', error);
+        Alert.alert('Error', `No se pudo eliminar: ${error.message}`);
+        // 5. REVIERTE: Si Supabase falló, restaura el estado local original
+        setCartItems(originalCartItems);
       }
+      // Si no hubo error, la UI ya está correcta. Realtime puede confirmar después.
     } catch (error) {
-      console.error('Error al eliminar del carrito:', error);
-      // Manejar el error
+      console.error('[removeFromCart] Excepción:', error);
+      Alert.alert('Error', 'Problema al eliminar.');
+      // 5. REVIERTE: También revierte en caso de excepción inesperada
+      setCartItems(originalCartItems);
+    } finally {
+      setIsLoading(false); // Quita el indicador de operación en curso
     }
   };
 
-  const increaseQuantity = async (productId) => {
+  // Actualizar la cantidad de un producto
+  const updateQuantity = async (productId, change) => {
+    if (!userId) return; // Requiere usuario
+
+    // 1. Guarda estado original y encuentra el item a actualizar
+    const originalCartItems = [...cartItems];
+    const itemIndex = originalCartItems.findIndex(item => item.product_id === productId);
+    if (itemIndex === -1) {
+         console.warn(`[updateQuantity] Intento de actualizar item no encontrado localmente: ${productId}`);
+         return;
+    }
+
+    const currentItem = originalCartItems[itemIndex];
+    const originalQuantity = currentItem.quantity;
+    const newQuantity = Math.max(originalQuantity + change, 1); // Cantidad mínima es 1
+
+    // Si no hay cambio real (ej. intentar bajar de 1), no hace nada
+    if (newQuantity === originalQuantity && change < 0) return;
+
+    // 2. Actualización Optimista: Modifica el estado local inmediatamente
+    setCartItems(prevItems =>
+        prevItems.map(item =>
+            item.product_id === productId
+                ? { ...item, quantity: newQuantity } // Actualiza la cantidad del item correcto
+                : item // Deja los demás items igual
+        )
+    );
+
+    // 3. Llama a Supabase en segundo plano para actualizar la BD
     try {
-      // Obtener la cantidad actual del producto en el carrito
-      const { data: existingItem, error: existingItemError } = await supabase
-        .from('Carrito')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('product_id', productId);
-  
-      if (existingItemError) {
-        console.error('Error al obtener la cantidad del producto:', existingItemError);
-        Alert.alert('Error', 'No se pudo aumentar la cantidad del producto.');
-      } else if (existingItem.length > 0) {
-        // Aumentar la cantidad en 1
-        const { error: updateError } = await supabase
-          .from('carrito')
-          .update({ quantity: existingItem[0].quantity + 1 })
-          .eq('id', existingItem[0].id);
-  
-        if (updateError) {
-          console.error('Error al actualizar la cantidad:', updateError);
-          Alert.alert('Error', 'No se pudo aumentar la cantidad del producto.');
+        setIsLoading(true); // Indicador sutil (opcional)
+        const { error } = await supabase
+            .from('Carrito')
+            .update({ quantity: newQuantity }) // Actualiza solo la cantidad
+            .eq('id', currentItem.id)        // Identifica la fila por su ID
+            .eq('user_id', userId);           // Doble verificación
+
+        // 4. Maneja la respuesta
+        if (error) {
+            console.error('[updateQuantity] Error de Supabase:', error);
+            Alert.alert('Error', `No se pudo actualizar: ${error.message}`);
+            // 5. REVIERTE: Restaura el estado local original si Supabase falló
+            setCartItems(originalCartItems);
         }
-      }
+        // Si no hubo error, la UI ya está correcta.
     } catch (error) {
-      console.error('Error al aumentar la cantidad:', error);
-      Alert.alert('Error', 'No se pudo aumentar la cantidad del producto.');
+        console.error('[updateQuantity] Excepción:', error);
+        Alert.alert('Error', 'Problema al actualizar.');
+        // 5. REVIERTE: Restaura en caso de excepción
+        setCartItems(originalCartItems);
+    } finally {
+         setIsLoading(false); // Quita indicador
     }
   };
 
-  const decreaseQuantity = async (productId) => {
-    try {
-      // Obtener la cantidad actual del producto en el carrito
-      const { data: existingItem, error: existingItemError } = await supabase
-        .from('Carrito')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('product_id', productId);
-  
-      if (existingItemError) {
-        console.error('Error al obtener la cantidad del producto:', existingItemError);
-        Alert.alert('Error', 'No se pudo disminuir la cantidad del producto.');
-      } else if (existingItem.length > 0) {
-        // Disminuir la cantidad en 1, pero no menos de 1
-        const newQuantity = Math.max(existingItem[0].quantity - 1, 1); 
-        const { error: updateError } = await supabase
-          .from('Carrito')
-          .update({ quantity: newQuantity })
-          .eq('id', existingItem[0].id);
-  
-        if (updateError) {
-          console.error('Error al actualizar la cantidad:', updateError);
-          Alert.alert('Error', 'No se pudo disminuir la cantidad del producto.');
-        }
-      }
-    } catch (error) {
-      console.error('Error al disminuir la cantidad:', error);
-      Alert.alert('Error', 'No se pudo disminuir la cantidad del producto.');
-    }
-  };
-  
+  // Funciones helper que llaman a updateQuantity
+  const increaseQuantity = (productId) => updateQuantity(productId, 1);
+  const decreaseQuantity = (productId) => updateQuantity(productId, -1);
+
+  // --- Control de Visibilidad del Modal ---
   const toggleCartVisibility = () => {
-    setIsCartVisible(!isCartVisible);
+    if (userId) { // Solo abre si hay usuario
+      setIsCartVisible(!isCartVisible);
+    } else {
+      Alert.alert("Inicia sesión", "Debes iniciar sesión para ver tu carrito.");
+    }
   };
+
+  // --- Renderizado del Componente ---
+  // Calcula el número total de items (sumando cantidades) para el badge
+  const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-  <View>
-    <TouchableOpacity onPress={toggleCartVisibility}> 
-      <Image source={require('../assets/bag.png')} style={styles.icon} /> 
-    </TouchableOpacity>
+    <View>
+      {/* Botón en el Header para abrir el carrito */}
+      <TouchableOpacity onPress={toggleCartVisibility}>
+        <Image source={require('../assets/bag.png')} style={styles.icon} />
+        {/* Badge contador (solo visible si hay items) */}
+        {totalItems > 0 && (
+             <View style={styles.badgeContainer}>
+                 <Text style={styles.badgeText}>{totalItems}</Text>
+             </View>
+         )}
+      </TouchableOpacity>
 
-    {isCartVisible && (
-    <View style={styles.cartContainer}>
-      <View style={styles.cartHeader}>
-        <Text style={styles.cartTitle}>Carrito de compras</Text>
-        <TouchableOpacity onPress={toggleCartVisibility} style={styles.closeButton}>
-        
-        </TouchableOpacity>
-      </View>
+      {/* Modal que muestra el contenido del carrito */}
+      <Modal
+        animationType="slide" // Animación al aparecer/desaparecer
+        transparent={false}   // Fondo opaco
+        visible={isCartVisible} // Controlado por el estado
+        onRequestClose={toggleCartVisibility} // Botón atrás de Android
+      >
+        {/* SafeAreaView para respetar áreas seguras del dispositivo */}
+        <SafeAreaView style={styles.safeArea}>
+          {/* Configura la barra de estado */}
+          <StatusBar barStyle="dark-content" backgroundColor="#ffffff"/>
+          {/* Header dentro del Modal */}
+          <View style={styles.modalHeader}>
+             <Text style={styles.modalTitle}>Productos ({cartItems.length})</Text>
+             <TouchableOpacity onPress={toggleCartVisibility} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
 
-      {cartItems.length === 0 ? (
-        <Text style={styles.emptyCartMessage}>El carrito está vacío</Text>
-      ) : (
-        <ScrollView contentContainerStyle={styles.cartContent}>
-          {cartItems.map(item => (
-            <CartItem
-              key={item.id}
-              item={item}
-              onRemove={() => removeFromCart(item.id)}
-              onIncreaseQuantity={() => increaseQuantity(item.id)}
-              onDecreaseQuantity={() => decreaseQuantity(item.id)}
-            />
-          ))}
-        </ScrollView>
-      )}
+          {/* Contenido principal del carrito (lista de items) */}
+          {/* Muestra "Cargando..." solo al inicio si el carrito está vacío */}
+          {isLoading && cartItems.length === 0 ? (
+            <View style={styles.centeredMessage}><Text>Cargando...</Text></View>
+          ) :
+          // Muestra "Vacío" si no está cargando y no hay items
+          !isLoading && cartItems.length === 0 ? (
+            <View style={styles.centeredMessage}><Text style={styles.emptyCartMessage}>Tu carrito está vacío</Text></View>
+          ) : (
+            // Muestra la lista de items si hay alguno
+            <ScrollView contentContainerStyle={styles.cartContent}>
+              {cartItems.map(item => (
+                <CartItem
+                  key={item.id} // Usa el ID único de la fila del carrito como key
+                  item={item}
+                  // Pasa las funciones controladoras al componente CartItem
+                  onRemove={() => removeFromCart(item.product_id)}
+                  onIncreaseQuantity={() => increaseQuantity(item.product_id)}
+                  onDecreaseQuantity={() => decreaseQuantity(item.product_id)}
+                  isLoading={isLoading} // Pasa el estado de carga (opcional)
+                />
+              ))}
+               {/* Indicador sutil si isLoading es true durante una actualización */}
+               {isLoading && cartItems.length > 0 && <Text style={styles.loadingMoreText}>Actualizando...</Text>}
+            </ScrollView>
+          )}
 
-      <View style={styles.cartFooter}>
-        <Text style={styles.subtotal}>Subtotal: ${subtotal.toFixed(2)}</Text>
-        <TouchableOpacity style={styles.buyButton}>
-          <Text style={styles.buyButtonText}>Comprar ahora</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Footer del Carrito (Subtotal y Botón Comprar) */}
+          {/* Solo se muestra si hay items en el carrito */}
+          {cartItems.length > 0 && (
+             <View style={styles.cartFooter}>
+                <Text style={styles.subtotalText}>SUBTOTAL: ${subtotal.toFixed(2)}</Text>
+                <TouchableOpacity style={styles.buyButton} disabled={isLoading}>
+                  <Text style={styles.buyButtonText}>COMPRAR AHORA</Text>
+                </TouchableOpacity>
+             </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </View>
-    )}
-  </View>
   );
 };
 
+// --- ESTILOS ---
+// (Los mismos estilos que tenías en la versión anterior con Modal deberían funcionar bien)
 const styles = StyleSheet.create({
-  icon: {
-    width: 40,
-    height: 40,
-  },
-  cartContainer: {
-    position: 'absolute',
-    top: 45, 
-    left:-350,
-    width: '950%',
-    backgroundColor: '#fff',
-    zIndex: 2, 
-    padding: 20,
-    height: '1700%', // Altura fija para el carrito
-    elevation: 5, // Sombra para Android
-    shadowColor: '#000', // Sombra para iOS y Android
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  cartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    fontWeight:'bold',
-    marginBottom: 30, 
-  },
-  cartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  closeIcon: {
-    width: 20,
-    height: 20,
-  },
-  cartContent: {
-    flex: 1, // Permite que el contenido sea desplazable
-    padding: 10, // Espacio interno
-  },
-  cartItem: {
-    flexDirection: 'row', 
-    alignItems: 'flex-start', // Alinea los elementos al inicio verticalmente
-    marginBottom: 20, // Espacio entre cada item
-    borderBottomWidth: 1, // Separador entre items
-    borderBottomColor: '#eee', 
-    paddingBottom: 15, // Espacio inferior para cada item
-  },
-  cartItemImage: {
-    width: 120,
-    height: 150,
-    resizeMode: 'cover',
-    marginRight: 15,
-  },
-  subtotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 10,
-  },
-  buyButton: {
-    backgroundColor: '#8B4513',
-    padding: 15,
-    borderRadius: 5,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  buyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  productInfo: {
-    flex: 1, // Ocupa el espacio restante
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  productPrice: {
-    fontSize: 14,
-    color: '#8B4513',
-    marginBottom: 10,
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  quantityButton: {
-    backgroundColor: '#eee',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 5,
-    marginHorizontal: 5,
-  },
-  quantity: {
-    fontSize: 16,
-    marginHorizontal: 10,
-  },
-  removeButton:   
-  {
-    alignSelf: 'flex-start', // Alinea el botón a la izquierda
-  },
-  removeButtonText: {
-    color: 'red',
-    fontSize: 14,
-  },
+    loadingMoreText: { textAlign: 'center', padding: 10, color: '#888', fontStyle: 'italic', },
+    icon: { width: 28, height: 28, },
+    badgeContainer: { position: 'absolute', right: -8, top: -8, backgroundColor: 'red', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center', zIndex: 1, },
+    badgeText: { color: 'white', fontSize: 11, fontWeight: 'bold', },
+    safeArea: { flex: 1, backgroundColor: '#ffffff', },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e0e0e0', },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', },
+    closeButton: { padding: 5, },
+    closeButtonText: { fontSize: 16, color: '#8B4513', fontWeight: '500', },
+    cartContent: { paddingHorizontal: 15, paddingBottom: 20, flexGrow: 1, },
+    cartItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee', },
+    cartItemImage: { width: 80, height: 100, resizeMode: 'cover', marginRight: 15, borderRadius: 4, },
+    productInfo: { flex: 1, justifyContent: 'space-between', },
+    cartItemNombre: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 5, },
+    cartItemPrecio: { fontSize: 16, color: '#8B4513', fontWeight: 'bold', marginBottom: 12, },
+    quantityActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', },
+    quantityContainer: { flexDirection: 'row', alignItems: 'center', },
+    quantityButton: { backgroundColor: '#f0f0f0', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, borderWidth: 1, borderColor: '#ddd', },
+    quantityButtonText: { fontSize: 18, fontWeight: 'bold', color: '#555', },
+    quantityText: { fontSize: 16, fontWeight: 'bold', minWidth: 30, textAlign: 'center', marginHorizontal: 12, color: '#333', },
+    removeButton: { paddingVertical: 5, paddingHorizontal: 8, },
+    removeButtonText: { color: '#CC0000', fontSize: 14, fontWeight: '500', textTransform: 'uppercase', },
+    centeredMessage: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, },
+    emptyCartMessage: { fontSize: 18, color: '#666', textAlign: 'center', },
+    cartFooter: { paddingVertical: 15, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: '#e0e0e0', backgroundColor: '#ffffff', },
+    subtotalText: { fontSize: 16, fontWeight: 'bold', color: '#333', textAlign: 'left', marginBottom: 15, textTransform: 'uppercase', },
+    buyButton: { backgroundColor: '#8B4513', paddingVertical: 14, borderRadius: 5, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2, }, shadowOpacity: 0.23, shadowRadius: 2.62, elevation: 4, },
+    buyButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textTransform: 'uppercase', },
 });
 
 export default Cart;
