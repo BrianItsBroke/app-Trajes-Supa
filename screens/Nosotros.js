@@ -1,11 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect}from 'react';
 import { StyleSheet, View, Text, Image, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
 import useNosotrosViewModel from '../viewmodels/UseNosotrosViewModel';
 
 const { width } = Dimensions.get('window');
 
+//LazyLOading
+const LazyImage = ({ source, style, visible, placeholderStyle }) => {
+  if (!visible) {
+    return (
+      <View style={[style, styles.imagePlaceholder, placeholderStyle]}>
+        <ActivityIndicator color="#888" />
+      </View>
+    );
+  }
+  return <Image source={source} style={style} />;
+};
+
 const Nosotros = () => {
   const { openInstagram } = useNosotrosViewModel();
+
+  //LazyLoading
+  const [instagramImagesVisible, setInstagramImagesVisible] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setInstagramImagesVisible(true);
+    }, 250); 
+    return () => clearTimeout(timer); 
+  }, []);
 
   return (
     <View style={styles.container}>

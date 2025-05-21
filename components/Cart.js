@@ -11,11 +11,10 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
-import { supabase } from '../lib/supabase'; // Asegúrate que la ruta sea correcta
+import { supabase } from '../lib/supabase'; 
+import { Linking } from 'react-native';
 
-// --- Componente Hijo: CartItem ---
-// Muestra cada producto dentro del carrito
-const CartItem = ({ item, onRemove, onIncreaseQuantity, onDecreaseQuantity, isLoading }) => ( // isLoading opcional para deshabilitar botones
+const CartItem = ({ item, onRemove, onIncreaseQuantity, onDecreaseQuantity, isLoading }) => (
     <View style={styles.cartItem}>
       <Image
         source={{ uri: item.Productos?.imagen || 'URL_IMAGEN_POR_DEFECTO_SI_FALLA' }}
@@ -48,17 +47,16 @@ const CartItem = ({ item, onRemove, onIncreaseQuantity, onDecreaseQuantity, isLo
     </View>
   );
 
-// --- Componente Principal: Cart ---
-// Gestiona el estado del carrito, la visibilidad y las interacciones
-const Cart = () => {
-  // --- Estados del Componente ---
-  const [cartItems, setCartItems] = useState([]); // Array de items en el carrito
-  const [subtotal, setSubtotal] = useState(0);   // Subtotal calculado
-  const [isCartVisible, setIsCartVisible] = useState(false); // Visibilidad del modal del carrito
-  const [isLoading, setIsLoading] = useState(false);      // Indicador de carga general o de operaciones
-  const [userId, setUserId] = useState(null);             // ID del usuario autenticado
 
-  // --- Efecto para obtener Sesión y User ID ---
+const Cart = () => {
+  
+  const [cartItems, setCartItems] = useState([]); 
+  const [subtotal, setSubtotal] = useState(0);
+  const [isCartVisible, setIsCartVisible] = useState(false); 
+  const [isLoading, setIsLoading] = useState(false);     
+  const [userId, setUserId] = useState(null);            
+
+  
    useEffect(() => {
         const getSessionData = async () => {
              const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -66,11 +64,10 @@ const Cart = () => {
             setUserId(sessionData?.session?.user?.id ?? null);
         };
         getSessionData();
-        // Escucha cambios en el estado de autenticación
         const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
             const currentUserId = session?.user?.id ?? null;
             setUserId(currentUserId);
-            // Si el usuario cierra sesión, limpia el carrito y cierra el modal
+
             if (!currentUserId) {
                 setCartItems([]);
                 setIsCartVisible(false);
@@ -80,8 +77,7 @@ const Cart = () => {
         return () => { authListener?.subscription.unsubscribe(); };
     }, []);
 
-  // --- Función para Cargar el Carrito desde Supabase ---
-  // useCallback para optimizar y usar como dependencia en otros efectos
+    
   const fetchCart = useCallback(async (showLoadingIndicator = true) => {
     // Si no hay usuario, limpia el carrito y termina
     if (!userId) { setCartItems([]); return; }
@@ -92,131 +88,123 @@ const Cart = () => {
       // Consulta a Supabase para obtener items del carrito y datos del producto relacionado
       const { data, error } = await supabase
           .from('Carrito')
-          .select('*, Productos (*)') // Join con la tabla Productos
-          .eq('user_id', userId)      // Filtra por el usuario actual
-          .order('create_at', { ascending: true }); // Ordena por fecha (verifica nombre 'create_at')
+          .select('*, Productos (*)') 
+          .eq('user_id', userId)      
+          .order('create_at', { ascending: true }); 
 
       if (error) {
         console.error('Error al obtener el carrito (fetchCart):', error);
-        setCartItems([]); // Limpia en caso de error
+        setCartItems([]); 
       } else {
-        setCartItems(data || []); // Actualiza el estado con los datos obtenidos
+        setCartItems(data || []); 
       }
     } catch (error) {
       console.error('Excepción al obtener el carrito:', error);
-      setCartItems([]); // Limpia en caso de excepción
+      setCartItems([]); 
     } finally {
-      // Oculta indicador de carga si se mostró
+      
       if (showLoadingIndicator) setIsLoading(false);
     }
-  }, [userId]); // Esta función depende del userId
+  }, [userId]); 
 
-  // --- Efecto para Carga Inicial del Carrito ---
-  // Se ejecuta cuando el componente se monta o cuando fetchCart (o userId) cambian
+  
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
 
- // --- Efecto para Suscripción Realtime ---
- // Escucha cambios en la tabla Carrito para mantener la UI sincronizada
+
  useEffect(() => {
-    // No configura la suscripción si no hay usuario
+    
     if (!userId) { return; }
 
-    // Crea un canal específico para la tabla Carrito filtrado por usuario
+    
     const channel = supabase
         .channel(`public:Carrito:user_id=eq.${userId}`)
         .on(
             'postgres_changes',
             {
-                event: '*', // Escucha cualquier evento (INSERT, UPDATE, DELETE)
+                event: '*', 
                 schema: 'public',
                 table: 'Carrito',
-                filter: `user_id=eq.${userId}` // Filtro crucial para escuchar solo cambios propios
+                filter: `user_id=eq.${userId}` 
             },
             (payload) => {
-                // Cuando llega un cambio, vuelve a cargar el carrito
-                // El 'false' evita mostrar el indicador de carga grande para actualizaciones pequeñas
+                
                 fetchCart(false);
             }
         )
-        .subscribe((status, err) => { // Maneja el estado de la conexión del canal
+        .subscribe((status, err) => { 
              if (status === 'CHANNEL_ERROR' || err) { console.error('[Realtime] Channel Error:', err); }
-             // Puedes añadir logs para otros estados si es necesario (SUBSCRIBED, TIMED_OUT, etc.)
          });
 
-    // Función de limpieza: se ejecuta al desmontar o cambiar userId
+    
     return () => {
         if (channel) {
-            supabase.removeChannel(channel); // Elimina el canal para liberar recursos
+            supabase.removeChannel(channel); 
         }
     };
- }, [userId, fetchCart]); // Depende de userId y fetchCart
+ }, [userId, fetchCart]); 
 
-  // --- Efecto para Calcular el Subtotal ---
-  // Se ejecuta cada vez que cambia el array cartItems
+
   useEffect(() => {
     let total = 0;
     cartItems.forEach(item => {
-      // Suma el precio * cantidad de cada item válido
+      
       if (item.Productos && typeof item.Productos.precio === 'number' && typeof item.quantity === 'number') {
         total += item.Productos.precio * item.quantity;
       }
     });
-    setSubtotal(total); // Actualiza el estado del subtotal
+    setSubtotal(total); 
   }, [cartItems]);
 
 
-  // --- Funciones de Modificación con OPTIMISTIC UI ---
-
-  // Eliminar un producto del carrito
+  
   const removeFromCart = async (productId) => {
-    if (!userId) return; // Requiere usuario logueado
+    if (!userId) return; 
 
-    // 1. Guarda el estado actual para posible reversión
+    
     const originalCartItems = [...cartItems];
-    // Encuentra el item a eliminar (necesitamos su ID de fila)
+    
     const itemToRemove = originalCartItems.find(item => item.product_id === productId);
     if (!itemToRemove) {
         console.warn(`[removeFromCart] Intento de eliminar item no encontrado localmente: ${productId}`);
-        return; // Evita errores si el item ya no está por alguna razón
+        return; 
     }
 
-    // 2. Actualización Optimista: Modifica el estado local *antes* de llamar a Supabase
     setCartItems(prevItems => prevItems.filter(item => item.product_id !== productId));
 
-    // 3. Llama a Supabase en segundo plano para eliminar en la BD
+    
     try {
-      setIsLoading(true); // Indicador sutil de operación en curso (opcional)
+      setIsLoading(true); 
       const { error } = await supabase
         .from('Carrito')
         .delete()
-        .eq('id', itemToRemove.id) // Identifica la fila por su ID primario
-        .eq('user_id', userId);    // Doble verificación por seguridad (RLS ya lo hace)
+        .eq('id', itemToRemove.id) 
+        .eq('user_id', userId);    
 
-      // 4. Maneja la respuesta de Supabase
+      
       if (error) {
         console.error('[removeFromCart] Error de Supabase:', error);
         Alert.alert('Error', `No se pudo eliminar: ${error.message}`);
-        // 5. REVIERTE: Si Supabase falló, restaura el estado local original
+      
         setCartItems(originalCartItems);
       }
-      // Si no hubo error, la UI ya está correcta. Realtime puede confirmar después.
+      
     } catch (error) {
       console.error('[removeFromCart] Excepción:', error);
       Alert.alert('Error', 'Problema al eliminar.');
-      // 5. REVIERTE: También revierte en caso de excepción inesperada
+      
       setCartItems(originalCartItems);
     } finally {
-      setIsLoading(false); // Quita el indicador de operación en curso
+      setIsLoading(false); 
     }
   };
 
-  // Actualizar la cantidad de un producto
+  
   const updateQuantity = async (productId, change) => {
-    if (!userId) return; // Requiere usuario
+    if (!userId) return; 
 
-    // 1. Guarda estado original y encuentra el item a actualizar
+    
     const originalCartItems = [...cartItems];
     const itemIndex = originalCartItems.findIndex(item => item.product_id === productId);
     if (itemIndex === -1) {
@@ -226,62 +214,59 @@ const Cart = () => {
 
     const currentItem = originalCartItems[itemIndex];
     const originalQuantity = currentItem.quantity;
-    const newQuantity = Math.max(originalQuantity + change, 1); // Cantidad mínima es 1
+    const newQuantity = Math.max(originalQuantity + change, 1); 
 
-    // Si no hay cambio real (ej. intentar bajar de 1), no hace nada
+    
     if (newQuantity === originalQuantity && change < 0) return;
 
-    // 2. Actualización Optimista: Modifica el estado local inmediatamente
+    
     setCartItems(prevItems =>
         prevItems.map(item =>
             item.product_id === productId
-                ? { ...item, quantity: newQuantity } // Actualiza la cantidad del item correcto
-                : item // Deja los demás items igual
+                ? { ...item, quantity: newQuantity } 
+                : item 
         )
     );
 
-    // 3. Llama a Supabase en segundo plano para actualizar la BD
+    
     try {
-        setIsLoading(true); // Indicador sutil (opcional)
+        setIsLoading(true); 
         const { error } = await supabase
             .from('Carrito')
-            .update({ quantity: newQuantity }) // Actualiza solo la cantidad
-            .eq('id', currentItem.id)        // Identifica la fila por su ID
-            .eq('user_id', userId);           // Doble verificación
+            .update({ quantity: newQuantity }) 
+            .eq('id', currentItem.id)        
+            .eq('user_id', userId);           
 
-        // 4. Maneja la respuesta
         if (error) {
             console.error('[updateQuantity] Error de Supabase:', error);
             Alert.alert('Error', `No se pudo actualizar: ${error.message}`);
-            // 5. REVIERTE: Restaura el estado local original si Supabase falló
             setCartItems(originalCartItems);
         }
-        // Si no hubo error, la UI ya está correcta.
+        
     } catch (error) {
         console.error('[updateQuantity] Excepción:', error);
         Alert.alert('Error', 'Problema al actualizar.');
-        // 5. REVIERTE: Restaura en caso de excepción
+        
         setCartItems(originalCartItems);
     } finally {
-         setIsLoading(false); // Quita indicador
+         setIsLoading(false);
     }
   };
 
-  // Funciones helper que llaman a updateQuantity
+  
   const increaseQuantity = (productId) => updateQuantity(productId, 1);
   const decreaseQuantity = (productId) => updateQuantity(productId, -1);
 
-  // --- Control de Visibilidad del Modal ---
+  
   const toggleCartVisibility = () => {
-    if (userId) { // Solo abre si hay usuario
+    if (userId) { 
       setIsCartVisible(!isCartVisible);
     } else {
       Alert.alert("Inicia sesión", "Debes iniciar sesión para ver tu carrito.");
     }
   };
 
-  // --- Renderizado del Componente ---
-  // Calcula el número total de items (sumando cantidades) para el badge
+  
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -299,10 +284,10 @@ const Cart = () => {
 
       {/* Modal que muestra el contenido del carrito */}
       <Modal
-        animationType="slide" // Animación al aparecer/desaparecer
-        transparent={false}   // Fondo opaco
-        visible={isCartVisible} // Controlado por el estado
-        onRequestClose={toggleCartVisibility} // Botón atrás de Android
+        animationType="slide" 
+        transparent={false}   
+        visible={isCartVisible} 
+        onRequestClose={toggleCartVisibility} 
       >
         {/* SafeAreaView para respetar áreas seguras del dispositivo */}
         <SafeAreaView style={styles.safeArea}>
@@ -343,12 +328,10 @@ const Cart = () => {
             </ScrollView>
           )}
 
-          {/* Footer del Carrito (Subtotal y Botón Comprar) */}
-          {/* Solo se muestra si hay items en el carrito */}
           {cartItems.length > 0 && (
              <View style={styles.cartFooter}>
                 <Text style={styles.subtotalText}>SUBTOTAL: ${subtotal.toFixed(2)}</Text>
-                <TouchableOpacity style={styles.buyButton} disabled={isLoading}>
+                <TouchableOpacity onPress={() => Linking.openURL('https://www.bbva.mx/')} style={styles.buyButton} >
                   <Text style={styles.buyButtonText}>COMPRAR AHORA</Text>
                 </TouchableOpacity>
              </View>
@@ -359,8 +342,7 @@ const Cart = () => {
   );
 };
 
-// --- ESTILOS ---
-// (Los mismos estilos que tenías en la versión anterior con Modal deberían funcionar bien)
+
 const styles = StyleSheet.create({
     loadingMoreText: { textAlign: 'center', padding: 10, color: '#888', fontStyle: 'italic', },
     icon: { width: 28, height: 28, },
@@ -393,3 +375,4 @@ const styles = StyleSheet.create({
 });
 
 export default Cart;
+

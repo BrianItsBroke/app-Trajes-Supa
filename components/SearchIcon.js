@@ -49,8 +49,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ddd',
     position: 'absolute',
     top: 35,
-    left: -350,
-    right: -2,
+    left: -310,
+    right: -48,
     zIndex: 1,
   },
   searchContainer: {

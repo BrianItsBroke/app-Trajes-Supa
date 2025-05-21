@@ -1,10 +1,31 @@
-import React from 'react';
+import React,{useCallback,useState,useEffect,useRef} from 'react';
 import { View, Text, StyleSheet, Image, FlatList, TouchableOpacity, ScrollView } from 'react-native';
 import { useBlogViewModel } from '../viewmodels/BlogViewModel';
 import ContactoInfo from '../components/ContactoInfo';
 
 const BlogScreen = () => {
   const { blogPosts, irADetalle, regresarMain } = useBlogViewModel();
+  
+  //const navigation = useNavigation();
+  //LazyLoading
+  const [visibleItemIds, setVisibleItemIds] = useState(new Set());
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
+    setVisibleItemIds(prevVisibleItemIds => {
+      const newVisibleItemIds = new Set(prevVisibleItemIds);
+      viewableItems.forEach(item => {
+        if (item.isViewable && item.item) {
+          newVisibleItemIds.add(item.item.id);
+        }
+      });
+      return newVisibleItemIds;
+    });
+  }, []);
+
+  //lazyLoading
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 15
+  }).current;
 
   const renderItem = ({ item }) => (
     <TouchableOpacity style={styles.blogPost} onPress={() => irADetalle(item.id)}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback} from 'react';
 import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity, Button, Alert, Dimensions} from 'react-native';
 import { supabase } from '../lib/supabase'; 
 import AddProductModal from '../components/addProductModal';
@@ -21,6 +21,8 @@ function ProductList() {
   const [searchText, setSearchText] = useState("");
   const [userRole, setUserRole] = useState(null);
   const swiperRef = useRef(null);
+  //Para el lazyloading
+  const [visibleItemIds, setVisibleItemIds] = useState(new Set());
 
   useEffect(() => {
     // Iniciar el autoplay del Swiper (opcional)
@@ -28,7 +30,7 @@ function ProductList() {
       if (swiperRef.current) {
         swiperRef.current.scrollBy(1);
       }
-    }, 3000); // Cambiar la imagen cada 3 segundos
+    }, 3000); 
 
     // Limpiar el intervalo al desmontar el componente
     return () => clearInterval(autoplayInterval);
@@ -68,7 +70,6 @@ useEffect(() => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const navigation = useNavigation();
   useEffect(() => {
-    // ... tus otros useEffect ...
 
     // Quitar la flecha de retroceso
     navigation.setOptions({
@@ -86,9 +87,7 @@ useEffect(() => {
           console.error('Error añadiendo el producto:', error);
           Alert.alert('Error', 'No se pudo agregar el producto.');
         } else {
-          // Producto agregado con éxito
           setIsModalVisible(false); // Cerrar el modal
-          // Refrescar la lista de productos
           fetchProducts(setProducts);
         }
       } catch (error) {
@@ -163,7 +162,7 @@ useEffect(() => {
     } catch (error) {
       console.error("Error fetching products:", error);
     }
-  };
+  };2
   
   const handleAddToCart = async (productId) => {
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -224,6 +223,24 @@ useEffect(() => {
     }
 };
 
+  //Para el LazyLoading
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
+    setVisibleItemIds(prevVisibleItemIds => {
+      const newVisibleItemIds = new Set(prevVisibleItemIds);
+      viewableItems.forEach(item => {
+        if (item.isViewable && item.item) { // item.item to ensure it's a product
+          newVisibleItemIds.add(item.item.id);
+        }
+      });
+      return newVisibleItemIds;
+    });
+  }, []);
+
+  // Configuration for viewability
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50 // Load when 50% of the item is visible
+  }).current;
+
 
   const renderItem = ({ item }) => (
     <View style={styles.productItem}>
@@ -235,6 +252,7 @@ useEffect(() => {
       <Text style={styles.productName}>{item.nombre}</Text>
       <Text style={styles.productPrice}>${item.precio}</Text>
       </View>
+
       <TouchableOpacity
           style={styles.addToCartButton}
           onPress={() => handleAddToCart(item.id)}
@@ -245,6 +263,7 @@ useEffect(() => {
       <TouchableOpacity onPress={() => Linking.openURL('https://www.bbva.mx/')} style={styles.buyButton}> 
         <Text style={styles.buyButtonText}>Comprar</Text> 
       </TouchableOpacity>
+      
       {userRole === 'admin' && (
         <>
         <Button
@@ -282,7 +301,7 @@ useEffect(() => {
           setSearchText={setSearchText}
         />
 
-        <View style={{ marginLeft: 15 }}> {/* Ajusta este margen según necesites */}
+        <View style={{ marginLeft: 15 }}> 
           <Cart />
         </View>
         
@@ -291,17 +310,16 @@ useEffect(() => {
 
         <View style={styles.carruselContainer}> 
         <Swiper 
-        ref={swiperRef} // Asignar la referencia al Swiper
+        ref={swiperRef} 
         style={styles.carrusel} 
         loop 
-        autoplay={false} // Puedes activar el autoplay si lo deseas
+        autoplay={false} 
         dot={<View style={styles.dot} />}
         activeDot={<View style={styles.activeDot} />}
         >
         <Image source={require('../assets/Blog1.jpg')} style={styles.carruselImagen} />
         <Image source={require('../assets/Blog2.jpg')} style={styles.carruselImagen} />
         <Image source={require('../assets/Blog3.jpg')} style={styles.carruselImagen} />
-        {/* Agrega más imágenes si lo deseas */}
         </Swiper>
         </View>
         
@@ -358,7 +376,6 @@ useEffect(() => {
 }
 
 const styles = StyleSheet.create({
-    // ... copia aquí los estilos relevantes del código que proporcionaste ...
     container: { 
       flex: 1, 
       padding: 8, 
